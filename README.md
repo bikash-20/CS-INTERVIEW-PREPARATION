@@ -26,7 +26,7 @@ Every topic is written in **simple, plain English** with **theory, intuition, op
 
 - **18 DSA topics** with 56+ solved C++ problems (Easy / Medium / Hard)
 - **7 CS fundamentals** modules (OS, DBMS, CN, OOP, C++ specifics, SOLID, design patterns)
-- **10 classic system design** problems (URL shortener, Twitter, YouTube, Uber, WhatsApp, Dropbox, KV store, rate limiter, notification system, parking lot)
+- **15 classic system design** problems (URL shortener, Twitter, YouTube, Uber, WhatsApp, Dropbox, KV store, rate limiter, notification system, parking lot, pastebin, web crawler, proximity, Instagram, task scheduler)
 - **Frontend interview guide** (HTML/CSS, JavaScript, TypeScript, React, performance, accessibility, security)
 - **Backend interview guide** (Node.js, Java Spring Boot, Python Django/FastAPI + REST, JWT, SQL/NoSQL, caching)
 - **DevOps interview guide** (Docker, Kubernetes, AWS, CI/CD, Terraform, Ansible, monitoring, security)
@@ -80,8 +80,8 @@ Every major DSA topic with theory + multiple problems (Easy / Medium / Hard).
 - **Design Patterns** — Singleton, Factory, Observer, Strategy, Decorator, etc.
 
 ### `03-system-design/` — System Design
-- **Fundamentals** — Scalability, Caching, Sharding, CAP Theorem, Consistent Hashing
-- **Classic Problems** — URL Shortener, Twitter, YouTube, Uber, WhatsApp, Dropbox, Rate Limiter, etc.
+- **Fundamentals** — 30 sections covering scalability, caching, sharding, CAP, Raft/Paxos, queues, observability, security, and more
+- **15 Classic Problems** — URL Shortener, Twitter, YouTube, Rate Limiter, Parking Lot (LLD), Uber, WhatsApp, Dropbox, KV Store, Notifications, Pastebin, Web Crawler, Proximity (Yelp), Instagram, Task Scheduler
 
 ### `04-cheatsheets/` — Quick Revision
 - Time & Space Complexity Cheatsheet
@@ -146,7 +146,7 @@ This is a **public repo**. PRs welcome — fix typos, add problems, improve expl
 - **56+** curated LeetCode-style C++ problems solved
 - **18** DSA topics fully covered
 - **7** CS fundamentals modules with interview Q&A
-- **10** classic system design problems
+- **15** classic system design problems (URL shortener, Twitter, YouTube, Uber, WhatsApp, Dropbox, KV store, rate limiter, notification system, parking lot, pastebin, web crawler, proximity, Instagram, task scheduler)
 - **25+** design patterns with C++ examples
 - **100+** Frontend interview Q&A (HTML, CSS, JavaScript, TypeScript, React)
 - **100+** Backend interview Q&A (Node.js, Java Spring Boot, Python)

@@ -1,158 +1,277 @@
 # Design YouTube / Netflix (Video Streaming)
 
-## Requirements
+Tests how you handle huge files, encoding, CDN, and adaptive streaming.
+
+---
+
+## 1. Requirements
 
 ### Functional
 - Upload videos.
 - Watch / stream videos.
+- Search videos.
 - Like, comment, subscribe.
-- Search, recommendations.
+- Recommendations ("Up next").
+- Multiple resolutions (360p / 720p / 1080p / 4K).
 
 ### Non-Functional
-- Massive scale (billions of videos watched/day).
-- Low-latency playback (start in <1s).
-- Adaptive bitrate (different qualities).
+- Massive scale — billions of views/day.
+- Low startup latency — video starts in < 2 s.
+- Adaptive bitrate — switch quality based on bandwidth.
+- Durability — videos must never be lost.
 
 ---
 
-## Capacity Estimation
+## 2. Capacity Estimation
 
-- 1B DAU
-- Avg watch time: 30 min/day = 1.8B hours/day
-- 1.8B hours * 60min = 108B minutes/day
-- Storage: 1B videos * avg 1GB = 1 EB (exabyte) — store across many object stores
-- Bandwidth: massive — served from CDN
+Assume 1B DAU, avg 5 videos/day per user, avg 10 min watch, ~5 Mbps at 1080p.
+
+| Metric | Value |
+|---|---|
+| Daily views | 5 × 1B = **5 billion/day** |
+| Avg view size | 10 min × 5 Mbps × 60 = **3.75 GB** (peak) |
+| Daily egress | 5B × 3.75 GB = **~19 EB/day** — clearly CDN-served |
+| Upload size | 500M hours / year × 5 GB/h ≈ **2.5 EB/year** new video |
+| Storage growth | ~2.5 EB/year raw → + encoded versions = ~5-10× |
 
 ---
 
-## High-Level Design
+## 3. High-Level Design
 
 ```
-┌────────┐ ┌────────────┐ ┌──────────────┐
-│ Client │───────►│ CDN Edge │───────►│ Origin Server│
-└────────┘ └──────┬─────┘ └──────────────┘
- ▲ │
- │ ▼
- │ ┌────────────┐
- │ │ Transcoder │ (FFmpeg → multiple bitrates)
- │ └────┬───────┘
- │ │
+ ┌────────┐ upload ┌─────────┐
+ │ Client │ ──────► │ API GW │
+ └────┬───┘ └────┬────┘
+ │ │ upload trigger
  │ ▼
  │ ┌─────────────┐
- │ │ Object Store│ (S3)
- │ └─────────────┘
+ │ │ Object Store │ (S3 — raw upload)
+ │ └─────┬───────┘
+ │ transcode event
+ ▼ ▼
+ ┌────────────┐ ┌────────────┐ ┌────────────┐
+ │ Transcoder │ ───► │ Encoded │ (HLS/DASH segments)
+ │ Workers │ │ Storage │
+ └────────────┘ └─────┬──────┘
  │
- │ ┌─────────────┐
- └────────────│ Metadata DB │
- │ (Cassandra) │
- └─────────────┘
+ ▼
+ ┌────────────┐
+ │ CDN │ (CloudFront / Akamai)
+ └─────┬──────┘
+ │ manifest + segments
+ ▼
+ Client (player)
+ │
+ metadata reads
+ ▼
+ ┌──────────┐ ┌────────────┐
+ │ Video │ │ User │
+ │ Service │──│ Service │
+ │ (Postgres)│ │ (Postgres)│
+ └──────────┘ └────────────┘
+ │
+ ▼
+ Elasticsearch (search)
 ```
 
 ---
 
-## Core Components
+## 4. Video Upload Flow
 
-### 1. Video Upload Pipeline
-1. Client requests **upload URL** (signed, points to S3 / GCS).
-2. Client uploads video chunks directly to object store.
-3. On complete, a worker triggers **transcoding** (FFmpeg) → multiple bitrates (240p, 360p, 720p, 1080p, 4K).
-4. Metadata stored in DB (video_id, title, owner, tags, URLs of all renditions).
+1. Client requests a **presigned upload URL** from API.
+2. Client uploads the file directly to **S3 / object storage**.
+3. Upload triggers an event ("video.uploaded") to a queue.
+4. **Transcoder worker** picks up the file:
+   - Probes codec, duration.
+   - Re-encodes to multiple resolutions: 360p, 480p, 720p, 1080p, 4K.
+   - Each rendition is **chunked** into segments (e.g., 4-10 s).
+   - Outputs an **HLS manifest (`.m3u8`)** or **DASH MPD** that lists the segments.
+5. Worker uploads encoded segments to CDN-backed storage.
+6. Worker updates metadata in DB: title, description, status = `ready`.
 
-### 2. Video Streaming
-- Client requests metadata of video_id.
-- Server returns URLs for manifest + rendition files.
-- Client uses **HLS / DASH** adaptive streaming — downloads manifest + chunks based on bandwidth.
-- CDN serves the chunks from nearest edge.
-
-### 3. CDN
-- Major cost saver — videos cached at edges worldwide.
-- For long-tail (rare videos), use **origin shield** or pull-through cache.
-
-### 4. Adaptive Bitrate Streaming
-- Player measures bandwidth, picks appropriate rendition.
-- Each rendition split into 4-10s chunks.
-- Resilient to network fluctuations.
+### Why HLS / DASH?
+- Adaptive bitrate: client picks segments based on bandwidth.
+- Better than progressive MP4 because users can switch quality mid-video.
 
 ---
 
-## Schema
+## 5. Video Streaming Flow
 
-```sql
--- Video metadata
-video_id BIGINT PRIMARY KEY
-user_id BIGINT
-title TEXT
-description TEXT
-duration INT
-visibility ENUM('public','private','unlisted')
-uploaded_at TIMESTAMP
-renditions JSON -- map of {resolution: cdn_url}
+1. Client opens a video URL.
+2. Player calls API: `GET /videos/{id}` → metadata + manifest URL.
+3. Player fetches the **HLS manifest** from CDN.
+4. Player downloads the first few segments (lowest bitrate), starts playing.
+5. Player monitors bandwidth; requests higher-bitrate segments if it can.
+6. Player may prefetch the next segment while current plays.
 
--- User
-user_id BIGINT PRIMARY KEY
-username VARCHAR
-subscribers BIGINT
+### Why CDN
+- Egress is enormous; serving from origin would melt the DB and burn money.
+- CDN caches segments at the edge; cold videos still warm when watched.
 
--- View count (denormalized for fast read)
-views BIGINT
+---
+
+## 6. Storage Architecture
+
+### Raw uploads
+- Object store (S3) — durable, cheap.
+- Lifecycle policy → move to cold storage after N days.
+
+### Encoded renditions
+- Each video: one folder per resolution, each with `segment_000.ts`, `segment_001.ts`, ...
+- Plus a manifest file per resolution (and a master manifest).
+
+### Metadata
+- Postgres / MySQL: video metadata, owner, status.
+- Redis: hot videos, view counts.
+
+### Search index
+- Elasticsearch: title, description, tags, transcript.
+
+---
+
+## 7. Database Schema
+
+```
+Table: videos
+ video_id UUID PK
+ uploader_id BIGINT
+ title TEXT
+ description TEXT
+ tags TEXT[]
+ duration_sec INT
+ status ENUM(uploading, processing, ready, failed)
+ visibility ENUM(public, unlisted, private)
+ created_at TIMESTAMP
+ view_count BIGINT
+ like_count BIGINT
+
+Table: video_renditions
+ video_id UUID
+ resolution VARCHAR (e.g., "1080p")
+ bitrate_kbps INT
+ codec VARCHAR
+ manifest_url TEXT
+ segment_count INT
+ PRIMARY KEY (video_id, resolution)
 ```
 
 ---
 
-## Encoding & Storage
+## 8. Adaptive Bitrate Streaming
 
-- **Storage tier:**
- - Hot videos (recent, popular) → high-perf SSD
- - Cold videos (old, unpopular) → cheaper object storage (S3 Glacier)
+The player measures:
+- Buffer health (how many seconds are buffered ahead).
+- Estimated bandwidth from recent downloads.
+- Device capabilities.
 
-- **Transcoding:** done asynchronously via workers (FFmpeg or hardware-accelerated).
+Then picks the highest rendition where buffer won't empty in < N seconds.
 
----
-
-## Key Optimizations
-
-1. **Pre-fetch next chunk** based on user behavior.
-2. **CDN caching** of popular videos.
-3. **Video compression** (H.264/H.265/AV1).
-4. **Chunk-based protocol** (HLS/DASH) — no full download needed.
-5. **Edge compute** for personalization.
+### Why it matters
+- Slow connection → 360p segments → no buffering.
+- Fast connection → 1080p / 4K segments.
 
 ---
 
-## How to Make Money (Side Note)
-- Subscriptions
-- Ads (server-side ad insertion in stream)
-- Pay-per-view
+## 9. Optimizations
+
+- **CDN everywhere.** Videos are huge; origin only for cache misses.
+- **Pre-fetch next segment** in the player.
+- **Pre-roll ads** cached at edge.
+- **Thumbnails** generated at multiple timestamps; pre-rendered.
+- **Lazy view count** — increment in Redis, flush to DB async.
+- **Hot video caching** — top 1% of videos in memory at CDN edge.
+- **Cold storage** — old videos served from lower-tier CDN or origin-shielded.
 
 ---
 
-## Follow-up Questions
+## 10. API Design
+
+```
+POST /api/v1/videos (init upload)
+ Body: { "title": "...", "size_bytes": ... }
+ → 200 { "video_id": "...", "upload_url": "..." }
+
+PUT <upload_url> (multipart upload to S3)
+ → 204
+
+GET /api/v1/videos/{id}
+ → 200 { "title": "...", "manifest_url": "...", "renditions": [...] }
+
+GET /api/v1/videos/{id}/comments?cursor=...
+POST /api/v1/videos/{id}/like
+POST /api/v1/subscriptions/{channel_id}
+
+GET /api/v1/search?q=...
+ → 200 { "results": [...] }
+```
+
+---
+
+## 11. Failure Modes
+
+| Failure | Mitigation |
+|---|---|
+| Upload fails mid-way | Resumable uploads (multipart). |
+| Transcode fails | Retry with backoff; mark `failed`; user can re-upload. |
+| CDN miss for segment | Origin fetches; caches at edge for next viewer. |
+| Player stalls | Player falls back to lower resolution; eventually goes to audio-only. |
+| View count skew | Sample / aggregate; eventual is fine. |
+
+---
+
+## 12. Follow-up Questions
 
 **Q: How to handle live streaming?**
-- Use RTMP ingest → transcoder → HLS/DASH output → CDN.
-- Lower latency requires WebRTC or LL-HLS.
+- Use RTMP ingest → transcode to HLS → push segments to CDN.
+- Latency: HLS is ~10-30 s. For low latency, use LL-HLS or WebRTC.
+
+**Q: How to handle copyright (Content ID)?**
+- Generate fingerprints (audio/video hashes) of uploads.
+- Compare against a reference DB; flag matches.
+
+**Q: How to support "watch later"?**
+- Simple list per user; Redis sorted set.
 
 **Q: How to recommend videos?**
-- ML pipeline: collaborative filtering + content-based + ranking.
-- Train offline; serve top-N per user.
+- Offline ML on user watch history, similarity.
+- Online candidate generation + re-ranking.
+- Pre-computed "Up next" list cached per video.
 
-**Q: How to ensure copyright? (Content ID)**
-- Match uploaded video against database of copyrighted fingerprints.
-- Allow claims, monetization, or removal.
+**Q: How to handle 4K / HDR?**
+- Encode additional high-bitrate renditions; player picks if device + bandwidth support.
 
-**Q: How to support offline downloads?**
-- DRM-protected local storage on client.
+**Q: How to test the transcoder at scale?**
+- Re-process existing videos on a schedule to test new pipelines.
+
+**Q: How to secure premium content (DRM)?**
+- Use Widevine, FairPlay, or PlayReady.
+- Segments are encrypted; player retrieves decryption keys from a license server.
+
+**Q: How to scale comments to billions?**
+- Sharded by `video_id`.
+- Paginate by cursor.
+- Cache hot videos' comment pages in Redis.
 
 ---
 
-## Diagram: Playback Flow
+## 13. End-to-End Diagram
 
 ```
-1. Client → API: GET /video/{id}
-2. API → DB: lookup metadata
-3. API → Client: return metadata + CDN URLs for manifest & renditions
-4. Client → CDN: GET /manifest.m3u8
-5. CDN → Client: manifest (lists all chunks)
-6. Client → CDN: GET chunk_001.ts, chunk_002.ts, ...
- (CDN serves from edge cache or fetches from origin)
+ Upload ─► S3 (raw) ─► Queue ─► Transcoder
+ │
+ │
+ Manifests + segments
+ │
+ ▼
+ CDN edges (CloudFront)
+ │
+ manifest request + segment requests
+ │
+ ▼
+ Player (mobile / web)
+ │
+ metadata
+ │
+ ▼
+ Postgres (video metadata) ─► Elasticsearch (search)
 ```

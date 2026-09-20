@@ -1,160 +1,282 @@
 # Design Uber / Lyft (Ride Sharing)
 
-## Requirements
+A location-heavy, real-time dispatch system. Tests geospatial indexing, real-time updates, and matching at scale.
+
+---
+
+## 1. Requirements
 
 ### Functional
-- Riders request rides.
-- Drivers see nearby ride requests.
-- Matching: nearest available driver.
-- Real-time location tracking.
-- Trip start/end, fare calculation, payment.
+- Riders request a ride.
+- Drivers see nearby requests, accept one.
+- Match rider ↔ driver.
+- Real-time location updates on map.
+- Trip lifecycle (start, end, payment).
+- Driver onboarding, ratings, fares.
 
 ### Non-Functional
-- Low-latency matching.
-- High availability.
-- Handle millions of concurrent users.
+- Real-time updates at low latency (< 2 s).
+- Massive concurrency — millions of active drivers.
+- Geospatial accuracy — match with drivers within ~1 km.
+- High availability; location updates must keep flowing even during a deploy.
 
 ---
 
-## High-Level Design
+## 2. Capacity Estimation
+
+Assume 30M daily rides, avg 5 drivers actively looking per km² in busy cities.
+
+| Metric | Value |
+|---|---|
+| Active drivers globally (peak) | ~5M |
+| Location updates / driver / min | 1 |
+| Location writes/sec | 5M / 60 ≈ **80,000** |
+| Ride request writes/sec | 30M / 86400 ≈ **350** avg, ~10× peak |
+| Concurrent open trip sessions | ~500K |
+
+---
+
+## 3. High-Level Design
 
 ```
-┌────────┐ ┌──────────┐ ┌──────────────┐
-│ Rider │────────►│ Trip │──────►│ Dispatch │
-│ App │ │ Service │ │ Service │
-└────────┘ └──────────┘ └──────┬───────┘
+ Rider app Driver app
+ │ │
+ API Gateway API Gateway
+ │ │
+ ┌──────────────┐ ┌──────────────┐
+ │ Rider │ │ Driver │
+ │ Service │ │ Service │
+ └────┬─────────┘ └─────┬────────┘
+ │ │
+ ┌────┴────┐ ┌──────┴───────┐
+ │ Postgres│ │ Driver Loc │
+ │ (users, │ │ Service │
+ │ trips) │ │ (geospatial │
+ └─────────┘ │ index) │
+ └────┬───────┘
+ │
+ ┌────────────────┐
+ │ Dispatcher │ ◄── Kafka (ride.requested)
+ │ (matching) │
+ └────────┬───────┘
+ │
+ WebSocket / push to driver apps
+```
+
+---
+
+## 4. Geospatial Indexing
+
+The core problem: "find drivers near point (lat, lng)".
+
+### Options
+
+**QuadTree**
+- Recursively divide the world into 4 quadrants.
+- Each leaf has at most N items; subdivide when full.
+- Fast range queries and point updates.
+- **Used by Uber.**
+
+**Google S2 / H3**
+- Project sphere onto cells with stable IDs.
+- Excellent for proximity + clustering.
+- H3 (hexagonal grid) popular for analytics and joins.
+
+**R-Tree (PostGIS)**
+- Standard geospatial index in relational DBs.
+- Simpler but heavier at very high update rates.
+
+**Redis GEORADIUS (GEOADD)**
+- Use for low-cardinality, high-velocity cases.
+- Limited to bounding-box queries.
+
+### Recommendation
+- Hot path: in-memory QuadTree, rebuilt every few seconds from Kafka stream.
+- Cold path / analytics: PostGIS or BigQuery GIS.
+
+---
+
+## 5. Driver Location Pipeline
+
+```
+ Driver app (every 3-5 s)
+ │
+ │ HTTPS / gRPC over WebSocket
+ ▼
+ API Gateway
  │
  ▼
-┌────────┐ ┌──────────┐ ┌──────────────┐
-│ Driver │────────►│ Location │ │ Matching │
-│ App │ │ Service │──────►│ Engine │
-└────────┘ └──────────┘ └──────────────┘
- │ │
- ▼ ▼
-[ WebSocket/RTC [ Redis: geo-index
- for live GPS ] of drivers ]
+ Driver Location Service
+ │
+ ├─ Kafka topic: driver.location (partition by driver_id)
+ │
+ ├─ Stream consumer updates QuadTree
+ │
+ └─ Stream consumer updates Postgres driver.last_location
+```
+
+Why Kafka?
+- Decouples write path from query path.
+- Lets multiple consumers rebuild different indexes (QuadTree, analytics).
+
+---
+
+## 6. Ride Request Flow
+
+1. Rider taps "Request".
+2. API → Dispatcher with pickup lat/lng.
+3. Dispatcher queries QuadTree: drivers within 1 km.
+4. Filters by availability, vehicle type, rating.
+5. Sends ride offer to top-K drivers (e.g., 5).
+6. First driver to accept wins.
+7. Dispatcher notifies other drivers the offer is gone.
+8. Trip record created in Postgres.
+9. Both apps move to "in trip" mode.
+
+### Why not broadcast to all nearby drivers?
+- Too many notifications.
+- Better UX: small set of likely matches.
+
+### Why not a single global dispatcher?
+- One per city/region for latency + fault isolation.
+
+---
+
+## 7. Trip Lifecycle
+
+```
+States: REQUESTED → MATCHED → EN_ROUTE → ARRIVED → IN_TRIP → COMPLETED → PAID
+```
+
+Transitions publish to Kafka; trip service updates Postgres; events go to billing, ratings, etc.
+
+---
+
+## 8. Pricing & ETA
+
+### ETA
+- Distance + traffic + historical patterns.
+- Use a routing service (OSRM, Google Maps) per pair.
+- Cache hot routes for popular corridors.
+
+### Fare
+- Base + per-km + per-minute + surge.
+- Surge computed from supply / demand in the area.
+
+---
+
+## 9. Real-time Map Updates
+
+- Each driver app opens a WebSocket to API Gateway.
+- Server pushes relevant events (new trip offer, rider cancellation, position of matched rider).
+- WebSocket is kept open with heartbeat.
+- On reconnect, client re-syncs state with REST.
+
+---
+
+## 10. Database Schema
+
+```
+Table: users
+ user_id BIGINT PK
+ role ENUM(rider, driver, both)
+ phone VARCHAR
+ email VARCHAR
+ rating_avg FLOAT
+
+Table: drivers
+ driver_id BIGINT PK (FK users)
+ vehicle_type ENUM(motorbike, car, xl)
+ license_no VARCHAR
+ status ENUM(offline, online, on_trip)
+ current_lat DOUBLE
+ current_lng DOUBLE
+ updated_at TIMESTAMP
+
+Table: trips
+ trip_id BIGINT PK
+ rider_id BIGINT
+ driver_id BIGINT
+ pickup_lat, pickup_lng
+ drop_lat, drop_lng
+ state ENUM(...)
+ requested_at, accepted_at, started_at, ended_at
+ fare DECIMAL
+ rating INT
 ```
 
 ---
 
-## Core Components
+## 11. Optimizations
 
-### 1. Location Service
-- Drivers send GPS updates every 3-5 seconds.
-- Update Redis with current location.
-- Use **Redis GEO commands** (`GEOADD`, `GEORADIUS`) for geospatial indexing.
-
-```redis
-GEOADD drivers:beijing <lng> <lat> driver_123
-GEORADIUS drivers:beijing <rider_lng> <rider_lat> 5 km WITHDIST
-```
-
-### 2. Trip Service
-- Trip state machine: `REQUESTED → MATCHED → EN_ROUTE → IN_PROGRESS → COMPLETED → PAID`.
-- Persists trip state in DB.
-
-### 3. Dispatch / Matching
-- On ride request, find nearby drivers via geospatial index.
-- Try drivers in order of distance + rating.
-- Send offer to driver (push notification / WebSocket).
-- If no acceptance in N seconds, try next.
-- On acceptance → MATCHED.
-
-### 4. Real-Time Communication
-- WebSocket for location updates (server pushes, driver receives).
-- Use socket.io / MQTT / gRPC streams.
-
-### 5. Pricing
-- Base fare + (per km * distance) + (per min * time) + surge multiplier.
-- Surge: based on demand vs supply in area.
-- Maps to dynamic pricing service.
+- **Edge WebSocket servers** close to drivers; sticky connections.
+- **Coalesce location updates:** don't process every tick; interpolate between updates on the client.
+- **Pre-compute ETAs** between hot zones every minute.
+- **Sharded dispatchers** per city.
+- **Backpressure:** if a dispatcher is slow, drop to less-frequent location writes.
+- **Cached nearby-driver lists** per hot pickup zone (e.g., airport queue).
 
 ---
 
-## Schema
+## 12. Failure Modes
 
-```sql
-CREATE TABLE trips (
- trip_id BIGINT PRIMARY KEY,
- rider_id BIGINT,
- driver_id BIGINT NULL,
- status VARCHAR(20),
- pickup_lat DOUBLE, pickup_lng DOUBLE,
- drop_lat DOUBLE, drop_lng DOUBLE,
- requested_at TIMESTAMP,
- matched_at TIMESTAMP NULL,
- started_at TIMESTAMP NULL,
- ended_at TIMESTAMP NULL,
- fare DECIMAL(10,2) NULL,
- surge_multiplier DECIMAL(3,2)
-);
-
-CREATE TABLE drivers (
- driver_id BIGINT PRIMARY KEY,
- status ENUM('OFFLINE','ONLINE','ON_TRIP'),
- current_lat DOUBLE, current_lng DOUBLE,
- last_heartbeat TIMESTAMP,
- rating DECIMAL(3,2)
-);
-```
+| Failure | Mitigation |
+|---|---|
+| Driver offline mid-trip | Notify rider; offer reassignment or cancel. |
+| Dispatcher crash | Failover to replica; in-flight offers expire. |
+| Map service slow | Cached ETAs; rough fallback (haversine distance). |
+| Payment service down | Defer payment; trip still ends; retry async. |
+| Surge calc wrong | Manual override / clamp in app. |
 
 ---
 
-## Key Design Challenges
+## 13. Follow-up Questions
 
-### 1. Efficient Nearest Driver Query
-- **Naive:** Scan all drivers. Doesn't scale.
-- **Geohash:** Divide world into cells; drivers in nearby cells.
-- **Redis GEO:** O(log N) per query. Excellent for this use case.
-- **QuadTree / Google S2:** Spatial indexing library.
+**Q: How to handle very dense areas (concerts)?**
+- Geo-fence the area; queue riders; assign in batches.
+- Pre-position drivers (driver incentives).
 
-### 2. Surge Pricing
-- Real-time demand vs supply per geo-cell.
-- Computed periodically (e.g., every 30s).
-- Adjust multiplier.
+**Q: How to ensure no double-match?**
+- Optimistic: insert trip with state = MATCHED into a unique row by driver_id. DB unique constraint prevents two open trips for same driver.
 
-### 3. ETA Calculation
-- Use map service (OSRM, Google Maps, GraphHopper) — precomputed graph + live traffic.
-- Cache ETAs.
+**Q: How to test matching logic at scale?**
+- Replay historical location streams; simulate demand; measure acceptance rate.
 
-### 4. Distributed Trip State
-- Single source of truth in DB; updates via trip service.
-- Use Kafka events to broadcast state changes.
-
-### 5. Driver Acceptance Rate
-- Track acceptance; lower priority for chronic decliners.
-
----
-
-## Capacity Estimation
-
-- 1M drivers online.
-- 100K trips in progress simultaneously.
-- 30K location updates/sec (1M drivers / 30s each).
-- 10K new trip requests/sec.
-
----
-
-## Optimizations
-
-1. **Pre-compute surge** every minute per cell.
-2. **Cache driver list per geo-cell** in Redis.
-3. **Batch driver location updates** in memory then flush.
-4. **Use WebSockets** for bidirectional comm (vs HTTP polling).
-5. **Predict demand** using ML (for driver positioning).
-
----
-
-## Follow-up Questions
-
-**Q: How to handle payment failures?**
-Retry; idempotent transactions; ledger entry; offline mode for cash.
+**Q: How to handle driver cancellations?**
+- Trip moves back to REQUESTED; offer to next best driver; cap on retries.
 
 **Q: How to detect fraud (fake GPS)?**
-Sanity-check locations; speed limits; device fingerprinting; ML on movement patterns.
+- Compare reported speed vs allowed; cross-check with map constraints; anomaly ML.
 
-**Q: How to scale globally?**
-Region-based deployment; data residency; map data local to region.
+**Q: How to support ride-pooling (shared rides)?**
+- Match multiple riders going in the same direction; route becomes a multi-stop sequence (TSP-ish).
 
-**Q: How to design for offline drivers?**
-Driver app caches pending requests; reconnects and syncs state.
+**Q: How to support offline ETA prediction when traffic data is sparse?**
+- Use historical averages for that route at that time-of-day.
+
+**Q: How to scale to 100M concurrent drivers?**
+- Shard by geohash / city; per-shard dispatcher; load balancer in front.
+
+---
+
+## 14. End-to-End Diagram
+
+```
+ Driver app ─► Driver Loc Service ─► Kafka
+ │ │
+ │ │
+ │ ▼
+ │ QuadTree in-memory
+ │ ▲
+ │ │ query
+ Rider app ─► Dispatcher ──────────┘
+ │ │
+ ▼ ▼
+ Kafka (trip events)
+ │
+ ▼
+ Trip Service ─► Postgres (trips, billing)
+ │
+ ▼
+ Notifications (push, SMS)
+```

@@ -154,6 +154,11 @@ Everything in one place. Use this as your study roadmap.
 | Dropbox / Google Drive | [08-dropbox.md](03-system-design/02-classic-problems/08-dropbox.md) |
 | Key-Value Store | [09-key-value-store.md](03-system-design/02-classic-problems/09-key-value-store.md) |
 | Notification System | [10-notification-system.md](03-system-design/02-classic-problems/10-notification-system.md) |
+| Pastebin | [11-pastebin.md](03-system-design/02-classic-problems/11-pastebin.md) |
+| Web Crawler | [12-web-crawler.md](03-system-design/02-classic-problems/12-web-crawler.md) |
+| Proximity Service (Yelp) | [13-proximity-service.md](03-system-design/02-classic-problems/13-proximity-service.md) |
+| Instagram | [14-instagram.md](03-system-design/02-classic-problems/14-instagram.md) |
+| Distributed Task Scheduler | [15-task-scheduler.md](03-system-design/02-classic-problems/15-task-scheduler.md) |
 
 ---
 

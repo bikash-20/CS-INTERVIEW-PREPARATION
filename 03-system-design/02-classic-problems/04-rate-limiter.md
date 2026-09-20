@@ -1,141 +1,274 @@
 # Design Rate Limiter
 
-## Requirements
+A focused, useful system that comes up in many interviews as either the main problem or a sub-component.
+
+---
+
+## 1. Requirements
 
 ### Functional
-- Limit requests per user/IP/API key.
-- Configurable limits (e.g., 100 requests/minute).
-- Return 429 (Too Many Requests) when exceeded.
+- Limit requests per user / IP / API key / endpoint.
+- Different limits per tier (free, paid).
+- Return HTTP 429 with `Retry-After` when exceeded.
+- Standard headers showing remaining quota.
 
 ### Non-Functional
-- Low latency.
-- High availability.
-- Distributed (works across multiple servers).
+- Low latency overhead (≤ 1 ms).
+- High availability — limiter failure should fail open (allow traffic) rather than fail closed (deny everything).
+- Distributed — multiple servers should see a consistent view.
+- Accurate even under bursts.
 
 ---
 
-## Where to Place
+## 2. Where to Place
 
-1. **Client-side** — easily bypassed, only for UX hints.
-2. **Server-side (in app)** — simple but each server has its own counter.
-3. **Middleware / API gateway** — preferred; central.
-4. **Cloud:** AWS API Gateway, Cloudflare, Kong, Envoy.
+| Layer | Pros | Cons |
+|---|---|---|
+| **Client** | UX hint | Easily bypassed |
+| **Server in-app** | Simple | Each server has own counter |
+| **API Gateway / middleware** | Central, recommended | One more hop |
+| **Cloud WAF (Cloudflare, AWS API GW)** | Global, edge | Limited logic |
+
+Best practice: edge + app. Edge blocks obvious abuse; app enforces business limits.
 
 ---
 
-## Algorithms
+## 3. Algorithms
 
-### 1. Token Bucket
-- Bucket holds N tokens; refilled at rate R.
-- Each request consumes 1 token.
-- If empty → reject.
-- **Pros:** Allows bursts up to bucket size.
-- **Use:** Most popular; used by AWS, Stripe.
+### Token Bucket
+- Bucket holds N tokens; refills at rate R.
+- Request consumes 1 token.
+- **Allows bursts** up to bucket size.
+- Most popular (Stripe, AWS).
 
-### 2. Leaky Bucket
+### Leaky Bucket
 - Requests added to queue; processed at fixed rate.
-- Overflow → drop.
-- **Pros:** Smooth output rate.
-- **Use:** Network shapers.
+- **Smooth output** regardless of input burst.
 
-### 3. Fixed Window Counter
-- Count requests per fixed time window (e.g., minute).
-- Reset at window boundary.
-- **Pros:** Simple.
-- **Cons:** Boundary spike — 2x allowed rate at boundaries.
+### Fixed Window Counter
+- Count per time window (e.g., per minute).
+- Simple.
+- **Boundary spike:** up to 2× the limit across two windows.
 
-### 4. Sliding Window Log
-- Store timestamps of all requests.
-- Count requests within last N seconds.
-- **Pros:** Accurate.
-- **Cons:** Memory-heavy.
+### Sliding Window Log
+- Store all timestamps; count entries in the last N seconds.
+- **Most accurate.**
+- Memory-heavy.
 
-### 5. Sliding Window Counter
-- Hybrid: weighted combination of current + previous window.
-- **Pros:** Good accuracy + low memory.
+### Sliding Window Counter
+- Weighted blend of current + previous window.
+- **Good accuracy + low memory** — practical sweet spot.
+
+### Comparison
+| Algorithm | Memory | Accuracy | Burst handling |
+|---|---|---|---|
+| Token bucket | O(1) per key | Approx | Allows burst |
+| Leaky bucket | O(1) per key | Approx | Smooths |
+| Fixed window | O(1) per key | Low | 2× at boundary |
+| Sliding log | O(N) per key | Exact | Allows burst |
+| Sliding counter | O(1) per key | Good | Tunable |
 
 ---
 
-## High-Level Design
+## 4. High-Level Design
 
 ```
-Client → Load Balancer → API Gateway (with rate limiter) → Services
+ Client
  │
  ▼
- ┌──────────┐
- │ Redis │ (counters, sorted sets)
- └──────────┘
+ Load Balancer
+ │
+ ▼
+ API Gateway (with rate limit middleware)
+ │
+ ▼
+ Redis (atomic counters / sorted sets)
+ │
+ ▼
+ Microservices
 ```
 
-## Implementation
+Two key data structures in Redis:
+- **Token bucket state:** `key = hash(user, route)` → `tokens`, `last_refill_ts`.
+- **Sliding window log:** `key = hash(user, route)` → sorted set of timestamps.
 
-### Token Bucket in Redis (Lua for atomicity)
+---
+
+## 5. Token Bucket in Redis (Lua, atomic)
 
 ```lua
 -- KEYS[1]: bucket key
--- ARGV[1]: capacity, ARGV[2]: refill rate (tokens/sec), ARGV[3]: now (sec), ARGV[4]: tokens to consume
+-- ARGV[1]: capacity, ARGV[2]: refill rate (tokens/sec),
+-- ARGV[3]: now (sec), ARGV[4]: tokens requested (usually 1)
 local data = redis.call('HMGET', KEYS[1], 'tokens', 'ts')
-local tokens = tonumber(data[1]) or tonumber(ARGV[1])
-local last_ts = tonumber(data[2]) or tonumber(ARGV[3])
-local delta = math.max(0, tonumber(ARGV[3]) - last_ts)
-tokens = math.min(tonumber(ARGV[1]), tokens + delta * tonumber(ARGV[2]))
+local tokens = tonumber(data[1])
+local last_ts = tonumber(data[2])
+local capacity = tonumber(ARGV[1])
+local rate = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+local cost = tonumber(ARGV[4])
+
+if tokens == nil then
+ tokens = capacity
+ last_ts = now
+end
+
+local delta = math.max(0, now - last_ts)
+tokens = math.min(capacity, tokens + delta * rate)
 
 local allowed = 0
-if tokens >= tonumber(ARGV[4]) then
- tokens = tokens - tonumber(ARGV[4])
+if tokens >= cost then
+ tokens = tokens - cost
  allowed = 1
 end
 
-redis.call('HMSET', KEYS[1], 'tokens', tokens, 'ts', ARGV[3])
+redis.call('HMSET', KEYS[1], 'tokens', tokens, 'ts', now)
 redis.call('EXPIRE', KEYS[1], 3600)
 return allowed
 ```
 
----
-
-## Distributed Considerations
-
-- **Race conditions:** Multiple servers updating counter. Use Lua scripts (atomic in Redis) or distributed locks.
-- **Synchronization:** Each request hits Redis — single source of truth.
-- **Performance:** Redis is in-memory → very fast (~100k ops/sec per node).
+Atomic in Redis → no race conditions across app servers.
 
 ---
 
-## What to Limit On
+## 6. Sliding Window Log in Redis
 
-| Key | Use Case |
-|-----|----------|
-| User ID | Authenticated API |
+```lua
+-- KEYS[1]: key, ARGV[1]: now_ms, ARGV[2]: window_ms, ARGV[3]: limit
+redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, tonumber(ARGV[1]) - tonumber(ARGV[2]))
+local count = redis.call('ZCARD', KEYS[1])
+if count >= tonumber(ARGV[3]) then
+ return 0
+end
+redis.call('ZADD', KEYS[1], tonumber(ARGV[1]), tonumber(ARGV[1]))
+redis.call('PEXPIRE', KEYS[1], tonumber(ARGV[2]))
+return 1
+```
+
+---
+
+## 7. Limit Dimensions
+
+Pick a tuple, e.g., `(user_id, /api/v1/upload)`.
+
+| Key | Use |
+|---|---|
 | IP | Public endpoints |
-| API Key | Third-party developers |
-| Endpoint | Protect heavy operations |
-| Combination | E.g., `(user_id, /upload)` |
+| User ID | Authenticated APIs |
+| API key | Third-party developers |
+| Endpoint | Protect heavy ops |
+| Combination | E.g., `(tenant_id, route)` |
 
 ---
 
-## Response Headers
+## 8. Headers
 
 ```
 X-RateLimit-Limit: 100
 X-RateLimit-Remaining: 23
 X-RateLimit-Reset: 1633024800
 
-# On 429:
+# On 429
 Retry-After: 30
+```
+
+Clients can throttle themselves proactively.
+
+---
+
+## 9. Distributed Considerations
+
+- **Single source of truth:** central Redis. App servers are stateless.
+- **Fail open:** if Redis is unreachable, allow request (with a warning metric). Better than blocking all users on a cache outage.
+- **Replica reads don't work for writes** — you need the primary or Redis cluster.
+- **Local cache with jittered TTL** for some limits (less accurate but reduces Redis load).
+
+---
+
+## 10. Dynamic Limits per Tier
+
+```
+limits:
+ free: 60/min
+ pro: 1000/min
+ enterprise: custom
+```
+
+API gateway looks up the user's tier, applies the right limit. Stored in a config service, hot-reloaded.
+
+---
+
+## 11. Common Patterns
+
+### Limit on tokens / cost
+Heavy endpoints cost more than lightweight ones (e.g., search = 5 tokens, ping = 1).
+
+### Burst budget
+Allow short bursts over the limit, but watch total over a longer window.
+
+### Multi-window
+Limit at multiple granularities: 10/sec, 100/min, 10k/day.
+
+---
+
+## 12. API for Limits Service
+
+```
+POST /admin/limits
+ Body: { "scope": "user:42:/api/upload", "limit": 100, "window_ms": 60000 }
+ → 201
+
+GET /admin/limits?scope=...
+ → 200 { "limit": 100, "used": 23, "reset_at": 1633024800 }
 ```
 
 ---
 
-## Follow-up Questions
+## 13. Follow-up Questions
 
-**Q: How to handle distributed clock skew?**
-Use Redis server time as source of truth (pass `TIME` command into Lua).
+**Q: How to handle clock skew across servers?**
+Use Redis server time as the source of truth: pass `TIME` command output into the Lua script.
 
-**Q: How to limit per endpoint differently?**
-Different rules per route; store rules in config / DB.
+**Q: How to test this at scale?**
+Replay traffic; pre-populate Redis with full buckets; measure latency under load.
 
-**Q: How to make limits dynamic per user (paid tiers)?**
-Look up user plan at limiter check; apply rule.
+**Q: How to limit per-endpoint differently?**
+Store rules in a config service or DB; look up at request time.
 
-**Q: How to handle CDN/WAF rate limiting vs app?**
-Layer them: CDN blocks obvious abuse (L7 rules), app handles business limits.
+**Q: How to handle tier changes mid-session?**
+Apply new tier on next request; allow current burst to drain.
+
+**Q: What about WebSocket / long connections?**
+Limit connection-establish rate, message rate, and bytes/sec separately.
+
+**Q: How to limit at edge (Cloudflare, AWS API GW)?**
+Use built-in throttling primitives; sync tier config to edge periodically.
+
+**Q: What if a single user is doing legitimate heavy traffic?**
+Per-endpoint limits catch abuse without blocking bulk operations.
+
+**Q: How to make rules hot-reload?**
+Push to Redis pub/sub; API gateway subscribes and updates in-process.
+
+**Q: Why not use database?**
+DB round-trip is too slow (5-10 ms vs Redis 0.5 ms). DB won't survive the read QPS.
+
+---
+
+## 14. End-to-End Diagram
+
+```
+ Client
+ │
+ ▼
+ Edge / WAF ──── coarse limit (IP, geo, abuse)
+ │
+ ▼
+ API Gateway ──── fine limit (user, endpoint, tier)
+ │
+ ▼ (Lua atomic)
+ Redis cluster
+ │
+ ▼
+ Microservices
+```
