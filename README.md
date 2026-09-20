@@ -71,13 +71,14 @@ Every major DSA topic with theory + multiple problems (Easy / Medium / Hard).
 | 17 | Math & Number Theory | `math` |
 | 18 | String Algorithms | `string`, `kmp`, `rabin-karp`, `z-algorithm` |
 
-### `02-cs-fundamentals/` — Core CS Theory
-- **Operating Systems** — Scheduling, Deadlock, Memory Management, Synchronization
-- **DBMS & SQL** — ACID, Normalization, Indexing, Transactions, Query Patterns
-- **Computer Networks** — OSI/TCP-IP, HTTP, TCP handshake, Load Balancing
-- **OOP Concepts** — 4 Pillars, SOLID, Composition vs Inheritance
-- **C++ Specifics** — Smart Pointers, Move Semantics, Virtual Functions, RAII, STL
-- **Design Patterns** — Singleton, Factory, Observer, Strategy, Decorator, etc.
+### `02-cs-fundamentals/` — Core CS Theory (250+ Q&A)
+- **Operating Systems** — Process vs Thread, Scheduling, Deadlocks, Synchronization, IPC, Paging, File Systems, Virtualization
+- **DBMS & SQL** — ACID, Normalization 1NF-5NF, Joins, Window Functions, Indexing, Transactions, MVCC, CAP, Sharding, Query Optimization
+- **Computer Networks** — OSI/TCP-IP, HTTP/HTTPS, TCP handshake, DNS, Load Balancing, CDN, TLS 1.3, WebSockets, Security
+- **OOP Concepts** — 4 Pillars, Association/Aggregation/Composition, Abstract vs Interface, Common Pitfalls
+- **C++ Specifics** — Pointers/References, Virtual Functions, Smart Pointers, Move Semantics, RAII, Templates, STL, Modern C++ 11/14/17/20/23
+- **SOLID Principles** — SRP, OCP, LSP, ISP, DIP — with C++ examples and refactorings
+- **Design Patterns** — 23 GoF patterns (Creational, Structural, Behavioral) with full C++ examples
 
 ### `03-system-design/` — System Design
 - **Fundamentals** — 30 sections covering scalability, caching, sharding, CAP, Raft/Paxos, queues, observability, security, and more
@@ -145,9 +146,9 @@ This is a **public repo**. PRs welcome — fix typos, add problems, improve expl
 
 - **56+** curated LeetCode-style C++ problems solved
 - **18** DSA topics fully covered
-- **7** CS fundamentals modules with interview Q&A
+- **7** CS fundamentals modules with 250+ interview Q&A (OS, DBMS, Networks, OOP, C++ Specifics, SOLID, Design Patterns)
 - **15** classic system design problems (URL shortener, Twitter, YouTube, Uber, WhatsApp, Dropbox, KV store, rate limiter, notification system, parking lot, pastebin, web crawler, proximity, Instagram, task scheduler)
-- **25+** design patterns with C++ examples
+- **23** GoF design patterns with full C++ examples (Singleton, Factory, Builder, Prototype, Adapter, Decorator, Facade, Proxy, Composite, Bridge, Flyweight, Observer, Strategy, State, Template Method, Command, Iterator, Mediator, Memento, Visitor, Chain of Responsibility)
 - **270+** Frontend interview Q&A (HTML, CSS, JavaScript, TypeScript, React, Next.js, a11y, security)
 - **240+** Backend interview Q&A (Node.js, Java Spring Boot, Python Django/FastAPI)
 - **113+** DevOps interview Q&A (Docker, K8s, AWS, CI/CD, Terraform, Ansible)

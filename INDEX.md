@@ -122,17 +122,17 @@ Everything in one place. Use this as your study roadmap.
 
 ---
 
-## CS Fundamentals
+## CS Fundamentals (250+ Q&A across 7 modules)
 
-| Module | File |
-|--------|------|
-| Operating Systems | [01-operating-systems/README.md](02-cs-fundamentals/01-operating-systems/README.md) |
-| DBMS & SQL | [02-dbms-sql/README.md](02-cs-fundamentals/02-dbms-sql/README.md) |
-| Computer Networks | [03-computer-networks/README.md](02-cs-fundamentals/03-computer-networks/README.md) |
-| OOP Concepts | [04-oop-concepts/README.md](02-cs-fundamentals/04-oop-concepts/README.md) |
-| C++ Specific | [05-cpp-specific/README.md](02-cs-fundamentals/05-cpp-specific/README.md) |
-| SOLID Principles | [06-solid-principles/README.md](02-cs-fundamentals/06-solid-principles/README.md) |
-| Design Patterns | [07-design-patterns/README.md](02-cs-fundamentals/07-design-patterns/README.md) |
+| Module | File | Topics |
+|--------|------|--------|
+| Operating Systems | [01-operating-systems/README.md](02-cs-fundamentals/01-operating-systems/README.md) | Process vs Thread vs Coroutine, CPU Scheduling, Deadlocks, Synchronization, IPC, Paging, Page Replacement, File Systems, I/O, Virtualization & Containers |
+| DBMS & SQL | [02-dbms-sql/README.md](02-cs-fundamentals/02-dbms-sql/README.md) | ACID, Normalization 1NF-5NF, Joins, Subqueries, Window Functions, CTEs, Indexing B-Tree/Hash/Bitmap, Transactions & Isolation Levels, MVCC, SQL vs NoSQL, CAP & PACELC, Sharding & Replication, Query Optimization, EXPLAIN, Storage Engines |
+| Computer Networks | [03-computer-networks/README.md](02-cs-fundamentals/03-computer-networks/README.md) | OSI/TCP-IP, HTTP/HTTPS, TCP handshake & congestion control, UDP, DNS, Load Balancing L4/L7, CDN, REST/GraphQL/gRPC/WebSockets, Cookies/Sessions/JWT/OAuth/OIDC, TLS 1.3, Security (CORS, CSRF, XSS, SQLi), HTTP/2 & HTTP/3 |
+| OOP Concepts | [04-oop-concepts/README.md](02-cs-fundamentals/04-oop-concepts/README.md) | 4 Pillars (Encapsulation, Abstraction, Inheritance, Polymorphism), Association/Aggregation/Composition, Abstract Class vs Interface, Common Pitfalls (Slicing, Diamond, Fragile Base Class), UML |
+| C++ Specific | [05-cpp-specific/README.md](02-cs-fundamentals/05-cpp-specific/README.md) | Pointers/References, vtable/vptr, Smart Pointers, Move Semantics, RAII, Rule of Five/Zero, Copy-and-Swap, Templates (Function, Class, Variadic, CRTP), STL Containers & Iterators, Algorithms & Lambdas, const/constexpr/mutable, Casts, Modern C++ 11/14/17/20/23 |
+| SOLID Principles | [06-solid-principles/README.md](02-cs-fundamentals/06-solid-principles/README.md) | SRP, OCP, LSP, ISP, DIP — with C++ examples, refactorings, packaging principles, when NOT to apply SOLID |
+| Design Patterns | [07-design-patterns/README.md](02-cs-fundamentals/07-design-patterns/README.md) | All 23 GoF patterns: Creational (Singleton, Factory Method, Abstract Factory, Builder, Prototype), Structural (Adapter, Decorator, Facade, Proxy, Composite, Bridge, Flyweight), Behavioral (Observer, Strategy, State, Template Method, Command, Iterator, Mediator, Memento, Visitor, Chain of Responsibility) — with full C++ examples |
 
 ---
 

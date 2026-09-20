@@ -1,260 +1,1015 @@
-# C++ Specific Interview Topics
+# C++ Specific Interview Topics — Comprehensive Guide
 
-## 1. Pointers vs References
-
-| Aspect | Pointer | Reference |
-|--------|---------|-----------|
-| Initialization | Can be null or uninitialized | Must be initialized |
-| Reassignment | Can be reassigned | Cannot be rebound |
-| Memory address | Has its own address | Alias of target |
-| Indirection | `*p` to dereference | Use directly |
-| Const-ness | `int* const p` (const ptr) | Cannot make a reference "reseatable" |
-
-```cpp
-int a = 5;
-int* p = &a; // pointer
-int& r = a; // reference
-
-*p = 10; // via pointer
-r = 20; // via reference (same as a = 20)
-```
-
-**When to use:**
-- References: function parameters (no null needed), range-for.
-- Pointers: optional values, polymorphism, dynamic memory, data structures.
+> **This is the deep-dive file for C++.** Everything C++-specific you need in one place: pointers vs references, virtual machinery, smart pointers, move semantics, RAII, templates, STL, modern C++ (11/14/17/20/23), and 50+ Q&A.
 
 ---
 
-## 2. Virtual Functions, vtable, vptr
+## Table of Contents
 
-### vtable (virtual table)
-- Each class with virtual functions has a **vtable** — array of function pointers.
-- Each instance has a hidden pointer (`vptr`) pointing to its class's vtable.
-
-```
-class Base {
-public:
- virtual void f(); // vtable[0] = &Base::f
- virtual void g(); // vtable[1] = &Base::g
-};
-class Derived : public Base {
-public:
- void f() override; // vtable[0] = &Derived::f
-};
-```
-
-**Cost:** one indirection per virtual call, plus one vptr per object.
-
-### Virtual Destructor
-Always make base class destructor virtual if it'll be deleted polymorphically:
-```cpp
-Base* b = new Derived();
-delete b; // calls only Base::~Base if not virtual → memory leak
-```
-
-### Pure Virtual Function
-```cpp
-virtual void draw() = 0; // must be overridden
-```
-Makes the class **abstract** (cannot instantiate).
+1. [C++ Memory Model & Object Layout](#1-c-memory-model--object-layout)
+2. [Pointers vs References](#2-pointers-vs-references)
+3. [Virtual Functions, vtable, vptr, Dynamic Dispatch](#3-virtual-functions-vtable-vptr-dynamic-dispatch)
+4. [Smart Pointers (`unique_ptr`, `shared_ptr`, `weak_ptr`)](#4-smart-pointers-unique_ptr-shared_ptr-weak_ptr)
+5. [Move Semantics, RVO & Perfect Forwarding](#5-move-semantics-rvo--perfect-forwarding)
+6. [RAII — Resource Acquisition Is Initialization](#6-raii--resource-acquisition-is-initialization)
+7. [Rule of Five / Rule of Zero / Copy-and-Swap](#7-rule-of-five--rule-of-zero--copy-and-swap)
+8. [Templates — Function, Class, Variadic, Specialization](#8-templates--function-class-variadic-specialization)
+9. [STL Containers & Iterators — In-Depth](#9-stl-containers--iterators--in-depth)
+10. [Algorithms & Lambdas](#10-algorithms--lambdas)
+11. [const, constexpr, mutable, volatile](#11-const-constexpr-mutable-volatile)
+12. [Exceptions, noexcept, error handling](#12-exceptions-noexcept-error-handling)
+13. [Casts — `static_cast`, `dynamic_cast`, `const_cast`, `reinterpret_cast`](#13-casts--static_cast-dynamic_cast-const_cast-reinterpret_cast)
+14. [Modern C++ Highlights (11/14/17/20/23)](#14-modern-c-highlights-1114172023)
+15. [Quick Reference Card](#15-quick-reference-card)
+16. [Top Interview Q&A (50 entries)](#16-top-interview-qa-50-entries)
 
 ---
 
-## 3. Smart Pointers (C++11+)
+## 1. C++ Memory Model & Object Layout
 
-### `unique_ptr<T>`
-- Sole ownership. Cannot copy, can move.
-```cpp
-std::unique_ptr<int> p = std::make_unique<int>(42);
-auto p2 = std::move(p);
-```
+### Object Memory Layout
 
-### `shared_ptr<T>`
-- Shared ownership via reference count.
-```cpp
-std::shared_ptr<int> p = std::make_shared<int>(42);
-auto p2 = p; // refcount++
-```
-
-### `weak_ptr<T>`
-- Non-owning observer of a `shared_ptr`.
-- Used to break circular references.
-```cpp
-std::weak_ptr<int> wp = p;
-if (auto sp = wp.lock()) { /* still alive */ }
-```
-
----
-
-## 4. Move Semantics
-
-### lvalue vs rvalue
-- **lvalue:** has a name, persists beyond expression. `int x = 5;` — `x` is lvalue.
-- **rvalue:** temporary, about to be destroyed. `5`, `x + y`.
-
-### std::move
-- Casts lvalue to rvalue reference, enabling move.
-```cpp
-std::string s = "hello";
-std::string s2 = std::move(s); // s is now empty (moved-from)
-```
-
-### Move Constructor / Assignment
-```cpp
-class Buffer {
- int* data;
-public:
- Buffer(Buffer&& other) noexcept : data(other.data) {
- other.data = nullptr; // "steal" resources
- }
- Buffer& operator=(Buffer&& other) noexcept {
- if (this != &other) {
- delete[] data;
- data = other.data;
- other.data = nullptr;
- }
- return *this;
- }
-};
-```
-
----
-
-## 5. RAII (Resource Acquisition Is Initialization)
-
-Tie resource lifetime to object lifetime:
-- Acquire resource in constructor.
-- Release in destructor.
-- Even if exceptions are thrown, destructor runs.
-
-```cpp
-class FileHandle {
- FILE* f;
-public:
- FileHandle(const char* name) : f(fopen(name, "r")) {}
- ~FileHandle() { if (f) fclose(f); }
-};
-```
-
----
-
-## 6. Rule of Five / Rule of Zero
-
-### Rule of Five
-If you define any of: destructor, copy ctor, copy assignment, move ctor, move assignment → define all five.
-
-### Rule of Zero
-Prefer to design classes so they don't need any of these (use smart pointers and STL containers).
-
----
-
-## 7. const Correctness
-
-```cpp
-int getSize() const; // member fn won't modify state
-const int* p; // pointer to const int
-int* const p; // const pointer to int
-const int* const p; // both const
-```
-
-**`mutable`** — allows modification of a member even in const methods (e.g., caching, mutex).
-
----
-
-## 8. Templates
-
-### Function Template
-```cpp
-template <typename T>
-T max(T a, T b) { return a > b ? a : b; }
-```
-
-### Class Template
-```cpp
-template <typename T>
-class Stack {
- std::vector<T> data;
-public:
- void push(const T& v) { data.push_back(v); }
- T pop() { T v = data.back(); data.pop_back(); return v; }
-};
-```
-
-### Template Specialization
-```cpp
-template <> class Stack<bool> { /* bit-packed impl */ };
-```
-
-### Variadic Templates (C++11+)
-```cpp
-template <typename... Args>
-void print(Args... args) {
- (std::cout << ... << args) << '\n'; // C++17 fold
-}
-```
-
----
-
-## 9. STL Containers — Quick Reference
-
-| Container | Underlying | Access | Insert/Delete |
-|-----------|-----------|--------|---------------|
-| `vector` | Dynamic array | O(1) random | O(1) end / O(n) middle |
-| `deque` | Doubly-ended queue | O(1) random | O(1) front/back |
-| `list` | Doubly linked list | O(n) | O(1) anywhere |
-| `stack` (adapter) | deque/list | top only | O(1) push/pop |
-| `queue` (adapter) | deque | front/back | O(1) push/pop |
-| `priority_queue` | vector+heap | top only | O(log n) |
-| `set` | Red-black tree | O(log n) | O(log n) |
-| `map` | Red-black tree | O(log n) | O(log n) |
-| `unordered_set` | hash table | O(1) avg | O(1) avg |
-| `unordered_map` | hash table | O(1) avg | O(1) avg |
-
----
-
-## 10. Memory Layout of an Object
+A typical object with virtuals:
 
 ```
-| vptr (8 bytes, if polymorphic) |
-| member1 |
-| member2 |
-| ... |
-| padding |
++----------------------+  ← object start
+| vptr (8 bytes, x64)  |  (only if class has any virtual fn)
++----------------------+
+| non-static data...   |
+|   member 1           |
+|   member 2 (padding) |
++----------------------+  ← object end (size = sizeof(T))
 ```
 
-For derived class:
+A derived class:
+
 ```
 [ Base subobject ][ Derived members ]
 ```
 
+### Storage Duration
+
+| Duration | Lifetime | Example |
+|----------|----------|---------|
+| **Static** | Program lifetime | Globals, `static` locals |
+| **Thread** | Thread lifetime | `thread_local` |
+| **Automatic** | Block scope | Local variables |
+| **Dynamic** | `new`/`delete` | Heap-allocated objects |
+
+### Value Categories (since C++11)
+
+| Category | Has identity? | Movable? | Examples |
+|----------|--------------|----------|----------|
+| **lvalue** | yes | no (usually) | `int x;`, `++i` |
+| **prvalue (pure rvalue)** | no | yes | `42`, `x+y` |
+| **xvalue** | yes | yes | `std::move(x)` |
+
+> Mental model: **lvalue = "stuff with a name"**, **rvalue = "temporary"**, **xvalue = "explicitly about to die"**.
+
 ---
 
-## 11. Top Interview Q&A
+## 2. Pointers vs References
 
-**Q: Why is `virtual` destructor important?**
-Without it, `delete basePtr` (where basePtr points to derived) calls only Base::~Base, leaking Derived's resources.
+| Aspect | Pointer | Reference |
+|--------|---------|-----------|
+| Initialization | Can be null/uninitialized | **Must** be initialized |
+| Reassignment | `p = &other;` allowed | Cannot be rebound |
+| Has its own address? | Yes | No — alias of target |
+| Indirection | `*p` to dereference | Use directly |
+| Const flavors | `int* const p` (const pointer) | Reference itself can't be re-seated |
+| Polymorphism | Yes | Yes |
+| Optional value | Yes (nullptr) | No |
 
-**Q: When to use `unique_ptr` vs `shared_ptr`?**
-Default to `unique_ptr` (cheap, clear ownership). Use `shared_ptr` only when truly shared.
+```cpp
+int a = 5;
+int* p = &a;       // pointer: nullable, reassignable
+int& r = a;        // reference: alias, must bind
 
-**Q: What is the slicing problem?**
-Passing a Derived object by value to a function taking Base — only Base part is copied; Derived members are lost.
+*p = 10;           // via pointer
+r  = 20;           // via reference (a is now 20)
+```
 
-**Q: What's the difference between `new` and `malloc`?**
-`new` calls constructor; throws on failure; returns typed pointer.
-`malloc` returns void*; doesn't call constructor; returns NULL on failure.
+### When to Use
 
-**Q: What is `nullptr`?**
-Typeless null pointer literal (C++11+). Replaces `NULL` and `0`.
+- **Reference:** function parameters (no null needed), range-for, operators (`operator[]`).
+- **Pointer:** optional values, ownership, polymorphism, data structures.
 
-**Q: Difference between `struct` and `class` in C++?**
-Default access: `struct` → public, `class` → private. Otherwise identical.
+### `nullptr` vs `NULL` vs `0`
 
-**Q: What is `explicit`?**
-Prevents implicit conversions in single-arg constructors.
+- `nullptr` is the type-safe null pointer literal (C++11).
+- `NULL` is typically `0` (or `(void*)0`); overload resolution can be ambiguous.
+- `0` is an `int` — never use as a pointer.
 
-**Q: Difference between deep copy and shallow copy?**
-Shallow: copies pointers (shared data). Deep: allocates new memory and copies values.
+---
 
-**Q: What is a virtual function call in constructor?**
-During base constructor, object's type is "currently being constructed as base", so virtual calls resolve to base's version. Avoid this.
+## 3. Virtual Functions, vtable, vptr, Dynamic Dispatch
+
+### The Mechanism
+
+A class with at least one `virtual` function has:
+
+1. A **vtable** — array of function pointers generated by the compiler (one per class).
+2. A hidden **vptr** in each object pointing to its class's vtable.
+
+```cpp
+class Base {
+public:
+    virtual void f();         // vtable[0] = &Base::f
+    virtual void g();         // vtable[1] = &Base::g
+};
+
+class Derived : public Base {
+public:
+    void f() override;        // vtable[0] = &Derived::f
+    void g() override;        // vtable[1] = &Derived::g
+};
+
+Base* b = new Derived();
+b->f();  // 1) follow vptr → vtable; 2) vtable[0] → Derived::f
+```
+
+### Costs of Virtual Functions
+
+- One indirect call per call (prevents inlining).
+- One pointer per object (vptr).
+- Larger binary (vtables).
+- Constructor/destructor may have additional setup work.
+
+### Virtual Destructor — Always Polymorphic Base
+
+```cpp
+Base* b = new Derived();
+delete b;             // calls only ~Base() if not virtual → leaks Derived
+```
+
+**Fix:** declare base destructor `virtual`. Even if the base destructor has no work, do it.
+
+### Pure Virtual & Abstract Classes
+
+```cpp
+class IDrawable {
+public:
+    virtual void draw() const = 0;
+    virtual ~IDrawable() = default;
+};
+
+class Circle : public IDrawable { /* must implement draw() */ };
+```
+
+Cannot instantiate `IDrawable`. Subclass **must** implement all pure virtuals (or stay abstract itself).
+
+### Calling a Specific Base Version
+
+```cpp
+Derived d;
+d.Base::f();                  // bypass virtual dispatch
+```
+
+Or from inside `Derived::f()`:
+
+```cpp
+void Derived::f() {
+    Base::f();                // call base version explicitly
+    /* derived work */
+}
+```
+
+### Virtual Function Call in Constructor — Don't
+
+In a base constructor, the dynamic type is still **base**. Virtual calls resolve to the base version, ignoring overrides. Don't call virtuals from constructors.
+
+### `override`, `final`
+
+```cpp
+struct Base { virtual void f() {} };
+struct D1 : Base { void f() override {} };     // compiler checks signature
+struct D2 : Base { void f() final {} };        // can't override below
+struct D3 : D2 { /* void f() override {} */ }; // ERROR
+```
+
+### Abstract Base with `delete` Methods (e.g., `boost::noncopyable` idiom)
+
+```cpp
+class NonCopyable {
+public:
+    NonCopyable(const NonCopyable&) = delete;
+    NonCopyable& operator=(const NonCopyable&) = delete;
+protected:
+    NonCopyable() = default;
+    ~NonCopyable() = default;
+};
+
+class Foo : private NonCopyable { /* ... */ };   // can't be copied
+```
+
+---
+
+## 4. Smart Pointers (`unique_ptr`, `shared_ptr`, `weak_ptr`)
+
+### Ownership Patterns
+
+| Pointer | Ownership | Copy? | Move? | Use |
+|---------|-----------|-------|-------|-----|
+| `unique_ptr<T>` | Sole | No | Yes | Default for owned resources |
+| `shared_ptr<T>` | Shared (refcounted) | Yes | Yes | Shared lifetime |
+| `weak_ptr<T>`   | Observer | N/A | N/A | Break cycles, cache |
+
+### `unique_ptr`
+
+```cpp
+auto p = std::make_unique<int>(42);   // C++14 preferred
+auto q = std::move(p);                 // ownership transferred; p is now null
+*p;                                    // dereference
+```
+
+- Zero-overhead abstraction over `new`/`delete`.
+- **Default to `unique_ptr`.**
+
+### `shared_ptr`
+
+```cpp
+auto p = std::make_shared<int>(42);
+auto q = p;                  // refcount++
+```
+
+- Internally: pointer to object + pointer to control block (refcount, weak count, deleter, allocator).
+- Use only when **truly** shared — refcount has atomic cost.
+
+### `weak_ptr`
+
+```cpp
+std::weak_ptr<int> wp = p;
+if (auto sp = wp.lock()) {
+    // object still alive; sp is a temporary shared_ptr
+} else {
+    // expired
+}
+```
+
+- Breaks **reference cycles** (parent ↔ child).
+- Doesn't contribute to refcount.
+
+### `enable_shared_from_this`
+
+Allows a class to safely create a `shared_ptr` to itself.
+
+```cpp
+class Widget : public std::enable_shared_from_this<Widget> {
+public:
+    std::shared_ptr<Widget> self() { return shared_from_this(); }
+};
+```
+
+### Custom Deleters
+
+```cpp
+auto fileDeleter = [](FILE* f){ if (f) fclose(f); };
+std::unique_ptr<FILE, decltype(fileDeleter)> fp(fopen("a.txt", "r"), fileDeleter);
+```
+
+### Pitfalls
+
+- **`shared_ptr` cycles:** A ↔ B both hold `shared_ptr` to each other → memory leak.
+- **Mixing smart pointers with raw `new`/`delete`** — never manage the same object with both.
+- **Don't `delete` what a smart pointer owns.**
+- **`shared_ptr` to `this` without `enable_shared_from_this`** → UB.
+
+---
+
+## 5. Move Semantics, RVO & Perfect Forwarding
+
+### Why Move?
+
+Copies are expensive for things like `std::vector`, `std::string`, sockets. Move is O(1): steal the pointer, leave the source empty.
+
+### `std::move`
+
+A cast from lvalue → rvalue reference. Doesn't actually move; it just makes the compiler **eligible** to use move semantics.
+
+```cpp
+std::string s = "hello";
+std::string t = std::move(s);    // t steals s's buffer; s is now valid but unspecified
+```
+
+### Move Constructor / Move Assignment
+
+```cpp
+class Buffer {
+    int* data_;
+    size_t size_;
+public:
+    Buffer(Buffer&& other) noexcept
+      : data_(other.data_), size_(other.size_) {
+        other.data_ = nullptr;
+        other.size_ = 0;
+    }
+
+    Buffer& operator=(Buffer&& other) noexcept {
+        if (this != &other) {
+            delete[] data_;
+            data_ = other.data_;
+            size_ = other.size_;
+            other.data_ = nullptr;
+            other.size_ = 0;
+        }
+        return *this;
+    }
+};
+```
+
+> **Mark move operations `noexcept`.** Otherwise `std::vector` and other STL containers will fall back to copying during reallocation.
+
+### RVO / NRVO
+
+When you return a local by value, the compiler is allowed to construct it **in place** at the call site (no copy, no move).
+
+```cpp
+std::vector<int> make() {
+    std::vector<int> v;
+    v.push_back(1);
+    return v;                  // RVO: no copy, no move (in C++17 guaranteed for prvalues)
+}
+```
+
+C++17 made **mandatory copy elision** for prvalues — even without a move/copy constructor.
+
+### `std::move` is NOT `std::forward`
+
+- `std::move` unconditionally casts to rvalue.
+- `std::forward<T>` preserves the original value category when the parameter was forwarded as a forwarding reference.
+
+### Perfect Forwarding
+
+```cpp
+template <typename T>
+void wrapper(T&& arg) {
+    // Forward as the same value category it came in with
+    sink(std::forward<T>(arg));
+}
+```
+
+Works because of **reference collapsing rules**: `T&& + T& = T&`, `T&& + T&& = T&&`.
+
+---
+
+## 6. RAII — Resource Acquisition Is Initialization
+
+> *Tie resource lifetime to object lifetime.* Acquire in the constructor, release in the destructor. Exceptions become safe because destructors run during stack unwinding.
+
+### Classic Examples
+
+```cpp
+class FileHandle {
+    FILE* f_;
+public:
+    explicit FileHandle(const char* name) : f_(std::fopen(name, "r")) {
+        if (!f_) throw std::runtime_error("cannot open");
+    }
+    ~FileHandle() { if (f_) std::fclose(f_); }
+
+    FileHandle(const FileHandle&)            = delete;
+    FileHandle& operator=(const FileHandle&) = delete;
+};
+```
+
+### RAII Wrappers in the Standard
+
+- `std::unique_ptr`, `std::shared_ptr` — memory.
+- `std::lock_guard`, `std::unique_lock` — mutexes.
+- `std::scoped_lock` — multiple mutexes (deadlock-avoiding).
+- `std::ofstream`, `std::ifstream` — files.
+- `std::thread` — threads.
+- `std::fstream` locks on construction.
+
+### Custom RAII
+
+```cpp
+class Timer {
+    std::chrono::steady_clock::time_point start_ = std::chrono::steady_clock::now();
+public:
+    ~Timer() {
+        auto end = std::chrono::steady_clock::now();
+        std::cout << "elapsed: "
+                  << std::chrono::duration_cast<std::chrono::microseconds>(end - start_).count()
+                  << "us\n";
+    }
+};
+
+void f() {
+    Timer t;          // construction
+    doWork();         // exceptions here are safe
+}                     // destructor prints elapsed time
+```
+
+---
+
+## 7. Rule of Five / Rule of Zero / Copy-and-Swap
+
+### Rule of Five
+
+If a class needs **any** of these, define **all five** (or `= delete` them):
+
+1. Destructor
+2. Copy constructor
+3. Copy assignment
+4. Move constructor
+5. Move assignment
+
+### Rule of Zero
+
+Best of all worlds: design classes so they don't need any of these. Use STL containers and smart pointers as members.
+
+```cpp
+class User {                          // no user-defined rule-of-five needed
+    std::string name_;
+    std::vector<Order> orders_;
+};
+```
+
+### Copy-and-Swap Idiom
+
+Strong exception-safe copy assignment in one line:
+
+```cpp
+class Buffer {
+    int* data_; size_t size_;
+public:
+    friend void swap(Buffer& a, Buffer& b) noexcept {
+        using std::swap;
+        swap(a.data_, b.data_);
+        swap(a.size_, b.size_);
+    }
+
+    Buffer(const Buffer& other) : data_(new int[other.size_]), size_(other.size_) {
+        std::copy(other.data_, other.data_ + size_, data_);
+    }
+
+    Buffer& operator=(Buffer other) {        // by value = copy of right-hand side
+        swap(*this, other);                  // swap with our copy; rhs destroyed
+        return *this;
+    }
+};
+```
+
+---
+
+## 8. Templates — Function, Class, Variadic, Specialization
+
+### Function Template
+
+```cpp
+template <typename T>
+T max(T a, T b) { return a > b ? a : b; }
+
+max(3, 5);              // T = int
+max(3.0, 5.0);          // T = double
+```
+
+### Class Template
+
+```cpp
+template <typename T>
+class Stack {
+    std::vector<T> data_;
+public:
+    void push(const T& v) { data_.push_back(v); }
+    T pop() { T v = std::move(data_.back()); data_.pop_back(); return v; }
+};
+```
+
+### Full Specialization
+
+```cpp
+template <> class Stack<bool> {    // packed bits
+    std::vector<uint8_t> bits_;
+    // ...
+};
+```
+
+### Partial Specialization
+
+```cpp
+template <typename T> class Ptr<T*> { /* pointer traits */ };
+```
+
+### Variadic Templates
+
+```cpp
+template <typename... Args>
+void print(Args... args) {
+    (std::cout << ... << args) << '\n';        // C++17 fold expression
+}
+```
+
+### Template Metaprogramming (SFINAE → Concepts)
+
+```cpp
+// C++20: concepts
+template <typename T>
+concept Addable = requires(T a, T b) { a + b; };
+
+template <Addable T>
+T add(T a, T b) { return a + b; }
+```
+
+### CRTP — Curiously Recurring Template Pattern
+
+```cpp
+template <class Derived>
+class Comparable {
+public:
+    bool operator==(const Derived& other) const {
+        return !(static_cast<const Derived&>(*this) < other)
+            && !(other < static_cast<const Derived&>(*this));
+    }
+};
+
+class Int : public Comparable<Int> {
+public:
+    int v;
+    explicit Int(int v) : v(v) {}
+    bool operator<(const Int& o) const { return v < o.v; }
+};
+```
+
+---
+
+## 9. STL Containers & Iterators — In-Depth
+
+### Container Overview
+
+| Container | Underlying | Random Access | Insert (avg) | Erase | Notes |
+|-----------|------------|---------------|--------------|-------|-------|
+| `vector`   | dynamic array | O(1) | O(1) amortized back, O(n) middle | O(n) middle | **Default workhorse** |
+| `deque`    | chunks | O(1) | O(1) front/back | O(n) middle | No reallocation |
+| `list`     | doubly linked list | O(n) | O(1) anywhere with iterator | O(1) | Stable iterators |
+| `forward_list` | singly linked | O(n) | O(1) after iterator | O(1) | Smallest STL |
+| `array<T,N>` | C array | O(1) | N/A | N/A | Fixed size, stack |
+| `set`      | red-black tree | O(log n) | O(log n) | O(log n) | Sorted, unique |
+| `map`      | red-black tree | O(log n) | O(log n) | O(log n) | Sorted, unique keys |
+| `multiset` | red-black tree | O(log n) | O(log n) | O(log n) | Sorted, duplicates |
+| `multimap` | red-black tree | O(log n) | O(log n) | O(log n) | Sorted, dup keys |
+| `unordered_set` | hash | O(1) avg | O(1) avg | O(1) avg | Worst O(n) |
+| `unordered_map` | hash | O(1) avg | O(1) avg | O(1) avg | Worst O(n) |
+| `priority_queue` | vector+heap | O(1) top | O(log n) | O(log n) | Adapter |
+| `stack` / `queue` | deque | n/a | O(1) | O(1) | Adapters |
+| `bitset`   | bits | O(1) | n/a | n/a | Fixed compile-time size |
+
+### Iterator Categories
+
+| Category | Operations | Examples |
+|----------|------------|----------|
+| Input | `++`, read once | `istream_iterator` |
+| Output | `++`, write once | `ostream_iterator` |
+| Forward | multi-pass ++ | `forward_list::iterator` |
+| Bidirectional | `++` and `--` | `list::iterator`, `set::iterator` |
+| Random access | `+=`, `-=`, `<`, `[]` | `vector::iterator` |
+
+### Choosing a Container
+
+- Default: **`std::vector`**.
+- Need ordered iteration + O(log n) lookup: `std::map` or `std::set`.
+- Need fast lookup, no order: `std::unordered_map` / `unordered_set`.
+- Need stable iterators during mutations: `std::list`.
+- FIFO queue: `std::queue`. LIFO stack: `std::stack`. Top-k: `std::priority_queue`.
+
+### `reserve` and Capacity
+
+`vector::push_back` doubles capacity (amortized O(1)). If you know the size in advance:
+
+```cpp
+vec.reserve(1000);   // one allocation; push_back no reallocations
+```
+
+### Heterogeneous Lookup (C++14+ for ordered; C++20 for unordered)
+
+```cpp
+std::set<std::string, std::less<>> s;          // transparent comparator
+s.find("key");                                  // string literal, no allocation
+```
+
+---
+
+## 10. Algorithms & Lambdas
+
+### Common Algorithms
+
+```cpp
+#include <algorithm>
+std::vector<int> v = {5, 2, 8, 1, 9, 3};
+
+std::sort(v.begin(), v.end());                             // ascending
+std::reverse(v.begin(), v.end());
+auto it = std::find(v.begin(), v.end(), 8);
+int cnt = std::count_if(v.begin(), v.end(), [](int x){ return x > 3; });
+bool any = std::any_of(v.begin(), v.end(), [](int x){ return x < 0; });
+int sum  = std::accumulate(v.begin(), v.end(), 0);
+
+std::transform(v.begin(), v.end(), v.begin(), [](int x){ return x * 2; });
+std::vector<int> w(v.size());
+std::copy(v.begin(), v.end(), w.begin());
+```
+
+### Lambdas
+
+```cpp
+auto add = [](int a, int b) { return a + b; };
+
+// Capture by value / reference
+int factor = 10;
+auto mul = [factor](int x) { return x * factor; };
+auto& ref = factor;
+auto mut = [factor]() mutable { factor++; };    // mutable lambda
+
+// Generic lambda (C++14)
+auto square = [](auto x) { return x * x; };
+
+// Init capture (C++14)
+auto p = std::make_unique<int>(5);
+auto lambda = [p = std::move(p)]() { return *p; };
+```
+
+### `std::function` vs Function Pointer vs Template
+
+| | `std::function<R(Args...)>` | Function pointer | Template |
+|--|--|--|--|
+| Type erasure | Yes | No | No |
+| Stores lambdas / captures | Yes | No | Yes |
+| Stores plain functions | Yes | Yes | Yes |
+| Cost | Virtual call | Direct call | Inlined |
+
+---
+
+## 11. const, constexpr, mutable, volatile
+
+### `const`
+
+```cpp
+const int* p1;     // pointer to const int
+int* const p2;     // const pointer to int
+const int* const p3;     // both const
+
+int getSize() const;     // member won't modify state
+```
+
+### `constexpr`
+
+A `constexpr` value/function **must be evaluable at compile time** (if inputs are constant). It's stronger than `const`.
+
+```cpp
+constexpr int square(int x) { return x * x; }
+constexpr int s = square(5);            // computed at compile time
+```
+
+`consteval` (C++20) — function **must** be evaluated at compile time.
+
+### `mutable`
+
+Allows modification of a member even in `const` methods. Use for caches, mutexes:
+
+```cpp
+class Memoized {
+    mutable std::optional<int> cache_;
+    int compute() const;          // expensive
+public:
+    int get() const {
+        if (!cache_) cache_ = compute();
+        return *cache_;
+    }
+};
+```
+
+### `volatile`
+
+Tells the compiler "this variable can change outside the current thread's view" — disables certain optimizations. Mostly for memory-mapped I/O. **Don't** use for thread synchronization (use `std::atomic`).
+
+---
+
+## 12. Exceptions, noexcept, error handling
+
+### Exception Safety Levels
+
+| Level | Guarantee |
+|-------|-----------|
+| **No-throw** | Operation never throws (e.g., destructors, move ops) |
+| **Strong** | If it throws, state is unchanged (transactional) |
+| **Basic** | If it throws, invariants hold but state may change |
+| **No guarantee** | Anything goes |
+
+### `noexcept`
+
+```cpp
+void f() noexcept;       // declares won't throw
+void g() noexcept(true); // same
+void h() noexcept(false); // may throw (default)
+```
+
+- Mark move constructors/assignment `noexcept` so vectors and strings can move rather than copy.
+- Destructors are implicitly `noexcept`.
+
+### `throw()` vs `noexcept`
+
+`throw()` is deprecated. Use `noexcept`.
+
+### Custom Exception Hierarchy
+
+```cpp
+class AppError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+class NetworkError : public AppError { using AppError::AppError; };
+class DBError      : public AppError { using AppError::AppError; };
+```
+
+### Alternative Error Models
+
+- **`std::expected<T, E>`** (C++23) — value or error.
+- **`std::optional<T>`** — value or absence.
+- **Error codes** — for embedded / low-overhead paths.
+
+---
+
+## 13. Casts — `static_cast`, `dynamic_cast`, `const_cast`, `reinterpret_cast`
+
+| Cast | Purpose | Safety |
+|------|---------|--------|
+| `static_cast<T>(x)` | Known, well-defined conversions (numeric, pointer up/down with care) | Compile-time check only |
+| `dynamic_cast<T>(x)` | Polymorphic pointer/reference conversions | **Runtime** checked (RTTI) |
+| `const_cast<T>(x)` | Add/remove `const`/`volatile` | Danger — undefined if original was const |
+| `reinterpret_cast<T>(x)` | Bit-level reinterpretation | Danger — implementation-defined |
+
+### When to Use Which
+
+```cpp
+double d = 3.14;
+int i = static_cast<int>(d);            // numeric
+
+Base* b = get();
+Derived* d = dynamic_cast<Derived*>(b); // safe if b is Derived, else nullptr
+
+const int* cp = &x;
+int* p = const_cast<int*>(cp);          // OK if x was not const
+
+int* ip = /* ... */;
+auto addr = reinterpret_cast<std::uintptr_t>(ip); // low-level
+```
+
+> **Avoid C-style casts** (`(int)d`) — they hide which of the four is happening.
+
+---
+
+## 14. Modern C++ Highlights (11/14/17/20/23)
+
+### C++11 — Modern Foundation
+
+- `auto`, `decltype`, range-for.
+- Move semantics, rvalue references, `std::move`.
+- Smart pointers, `std::array`, `std::unordered_*`.
+- Lambda expressions.
+- `nullptr`, `enum class`.
+- `constexpr` functions.
+- Variadic templates, `std::tuple`, `std::function`.
+- `static_assert`.
+- Threading primitives (`std::thread`, `std::mutex`, `std::future`).
+
+### C++14
+
+- Generic lambdas (`[](auto x){}`).
+- Init capture (`[p = std::move(p)]`).
+- `make_unique`.
+- `std::optional` (library).
+- `std::integer_sequence`, `std::make_index_sequence`.
+- `constexpr` relaxed rules.
+
+### C++17
+
+- **Structured bindings:** `auto [a, b, c] = tuple;`
+- **`if`/`switch` initializers:** `if (auto x = foo(); cond(x)) { ... }`
+- **Fold expressions:** `(std::cout << ... << args);`
+- `std::string_view`.
+- `std::optional`, `std::variant`, `std::any`.
+- Parallel STL (`std::execution::par`).
+- **Mandatory copy elision** for prvalues.
+- `std::filesystem`.
+- `[[nodiscard]]`, `[[maybe_unused]]`, `[[fallthrough]]`.
+
+### C++20
+
+- **Concepts** — clean template constraints.
+- **Ranges** — composable, lazy algorithms.
+- **Coroutines** — `co_await`, `co_return`, `co_yield`.
+- **Modules** — better than `#include`.
+- `consteval`, `constinit`, `constexpr` improvements.
+- Three-way comparison (`<=>` spaceship operator).
+- Designated initializers (`{.x=1, .y=2}`).
+- `std::format`, `std::span`.
+- `std::jthread` (joining + cooperative cancellation).
+
+### C++23
+
+- `std::expected<T, E>`.
+- `std::flat_map`, `std::flat_set`.
+- `std::mdspan` (multi-dimensional view).
+- `std::print`, `std::println`.
+- `std::ranges::to`.
+- Deducing `this`.
+
+---
+
+## 15. Quick Reference Card
+
+| Concept | One-Liner |
+|---------|----------|
+| `unique_ptr` | Sole-ownership smart pointer (default) |
+| `shared_ptr` | Refcounted shared ownership |
+| `weak_ptr` | Non-owning observer |
+| `std::move` | Cast lvalue → rvalue (enables move) |
+| `std::forward` | Preserve value category (perfect forwarding) |
+| `noexcept` | Function promises not to throw |
+| Rule of Five | If you define any of 5, define all 5 |
+| Rule of Zero | Design so none of the 5 are needed |
+| RAII | Resource lifetime tied to object lifetime |
+| CRTP | Static polymorphism via `class D : public B<D>` |
+| Concept | C++20 constraint for templates |
+| Structured binding | `auto [a,b] = pair;` |
+| vtable | Per-class function-pointer table for virtuals |
+| `override` | Compiler-checked virtual override |
+| `final` | No further override / no further inheritance |
+| `dynamic_cast` | Runtime-checked downcast |
+| `const_cast` | Strip const-ness (dangerous) |
+| `reinterpret_cast` | Bit reinterpret (very dangerous) |
+| `constexpr` | Possibly compile-time evaluated |
+| `consteval` | Always compile-time evaluated |
+
+---
+
+## 16. Top Interview Q&A (50 entries)
+
+**Q1: Pointer vs reference — when to use?**
+References for function params (no null) and operators. Pointers for optional values, polymorphism, ownership transfer.
+
+**Q2: Why must a polymorphic base destructor be virtual?**
+Otherwise `delete basePtr` only calls `~Base`, leaking Derived resources.
+
+**Q3: What is a vtable? Cost?**
+Per-class array of function pointers; each object holds a vptr. Costs: one indirection per call (no inlining), one pointer per object, larger binary.
+
+**Q4: What is the slicing problem?**
+Passing a derived by value to a base — only the base subobject is copied. Avoid by passing by pointer/reference.
+
+**Q5: `unique_ptr` vs `shared_ptr`?**
+Default to `unique_ptr` (cheaper, clearer ownership). Use `shared_ptr` only for true shared lifetime (and even then, consider other options).
+
+**Q6: What is `std::move`? Does it move?**
+A cast to rvalue reference. Doesn't move by itself — it makes the compiler eligible to pick a move constructor/assignment.
+
+**Q7: Why `noexcept` move constructors?**
+So `std::vector` reallocation can move rather than fall back to copy (which would give strong guarantees only if move doesn't throw).
+
+**Q8: What is perfect forwarding?**
+A function template takes `T&& arg` and passes it to another function as `std::forward<T>(arg)` — preserving lvalue/rvalue status.
+
+**Q9: What is RAII?**
+Resource Acquisition Is Initialization — acquire in constructor, release in destructor. Resource lifetime tied to object lifetime; safe under exceptions.
+
+**Q10: Rule of Five vs Rule of Zero?**
+Rule of Five: define all five special members or `= delete` them. Rule of Zero: design so you don't need any of them — use STL containers and smart pointers.
+
+**Q11: What is the difference between `new` and `malloc`?**
+`new` calls constructor, returns typed pointer, throws on failure. `malloc` returns void*, doesn't construct, returns NULL. Use `new`/`delete` in C++.
+
+**Q12: What is `nullptr`? Why over `NULL`?**
+Typeless null pointer literal (C++11). Avoids overload ambiguity (e.g., `foo(NULL)` could match both `int` and pointer).
+
+**Q13: `struct` vs `class`?**
+Default access: `struct` → public, `class` → private. Otherwise identical. Use `struct` for passive data, `class` for invariants.
+
+**Q14: What is `explicit`?**
+Prevents implicit conversions on single-argument constructors. Use by default — implicit conversions cause subtle bugs.
+
+**Q15: Deep copy vs shallow copy?**
+Shallow: copies the pointer (shared data). Deep: allocates new memory and copies values.
+
+**Q16: Why is calling a virtual function in a constructor bad?**
+During base construction, the dynamic type is "currently being constructed as base". Virtual calls resolve to base's version, ignoring derived overrides.
+
+**Q17: What is `final`?**
+`virtual void f() final;` — can't override further. `class Foo final {};` — can't derive from `Foo`.
+
+**Q18: `static_cast` vs `dynamic_cast`?**
+`static_cast`: compile-time, no runtime check; use for known conversions.
+`dynamic_cast`: runtime RTTI check; use for downcasting polymorphic pointers/refs.
+
+**Q19: What does `const` after a member function mean?**
+The function won't modify the object's state (except `mutable` members). Allows it to be called on const instances and from const contexts.
+
+**Q20: What is `mutable` used for?**
+Allow modification of a member in `const` methods. Common for caches (`mutable std::optional<...>`) and `mutable std::mutex`.
+
+**Q21: What is a `constexpr` function?**
+A function that **may** be evaluated at compile time when given constant inputs. Stronger than `const`.
+
+**Q22: What is `std::optional`?**
+A type that may or may not contain a `T`. Use to represent "value or absence" without sentinel values or raw pointers.
+
+**Q23: Difference between `std::array` and `std::vector`?**
+`array` has **fixed compile-time size**, stack-allocated (usually), no dynamic allocation. `vector` has dynamic size, heap-allocated.
+
+**Q24: `std::variant` vs inheritance?**
+Variant: closed set of alternatives, value semantics, no virtual dispatch. Inheritance: open-ended, polymorphic, reference semantics.
+
+**Q25: What does `std::function` do?**
+Type-erased wrapper for any callable (function, lambda, bind expression). Has overhead (typically heap + virtual call). Use templates when possible for performance.
+
+**Q26: Why use `emplace_back` over `push_back`?**
+`emplace_back(args...)` constructs the element **in place**, avoiding the temporary and (potential) move/copy.
+
+```cpp
+vec.emplace_back(1, 2, 3);   // constructs in place
+// vs
+vec.push_back(Foo(1, 2, 3)); // constructs temporary, moves it in
+```
+
+**Q27: Why is `reserve` important?**
+Pre-allocates capacity — avoids repeated reallocation/copying as you `push_back` thousands of items.
+
+**Q28: When to use `std::map` vs `std::unordered_map`?**
+`map`: ordered iteration, O(log n), no hashing overhead, ordered operations (lower_bound, etc.).
+`unordered_map`: O(1) avg lookup, no order.
+
+**Q29: When to use `std::list` vs `std::vector`?**
+Almost always `vector`. Use `list` when you need O(1) splice/insert/erase in the middle **and** stable iterators (not invalidated by other insertions).
+
+**Q30: What is the difference between `size()` and `capacity()` on a vector?**
+`size()` = number of elements. `capacity()` = allocated storage. `size() <= capacity()`.
+
+**Q31: How does `std::vector` grow?**
+Typically doubles (or 1.5×) capacity when needed. Amortized O(1) push_back.
+
+**Q32: What is `std::string_view`?**
+Non-owning view into a string. Cheap to copy, but you must keep the underlying string alive.
+
+**Q33: Why mark `[[nodiscard]]` on functions?**
+Compiler warns if the return value is ignored. Useful for getters, error codes.
+
+**Q34: What is `std::filesystem`?**
+C++17 library for portable filesystem operations (`path`, `directory_iterator`, `copy`, `rename`).
+
+**Q35: How do you measure execution time?**
+```cpp
+auto t0 = std::chrono::steady_clock::now();
+// work
+auto t1 = std::chrono::steady_clock::now();
+auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+```
+
+**Q36: What are forwarding references?**
+`T&&` in a **deduced** context is a forwarding reference (binds to both lvalues and rvalues). Outside deduction, `T&&` is just an rvalue reference.
+
+**Q37: What is SFINAE?**
+"Substitution Failure Is Not An Error" — failed template substitution silently removes the overload from candidates. Used to constrain templates pre-C++20.
+
+**Q38: What is a C++ concept?**
+C++20 named predicate that constrains a template. e.g., `template <std::integral T> ...`.
+
+**Q39: What is `std::span` (C++20)?**
+Non-owning view over a contiguous sequence — like a bounds-checked pointer + size.
+
+**Q40: What is `std::ranges` (C++20)?**
+Composable, lazy algorithms: `std::views::filter`, `std::views::transform`, pipe-style composition.
+
+**Q41: What does `auto` deduce?**
+Strips references and cv-qualifiers by default. `auto&` preserves them. `decltype(auto)` deduces including reference.
+
+**Q42: How does a `std::shared_ptr` know when to free?**
+Internal control block with refcount + weak count. On last `shared_ptr` destruction, refcount → 0 → deletes object. On last `weak_ptr` destruction, control block freed.
+
+**Q43: What is a memory leak in modern C++?**
+Memory allocated but unreachable — typically when raw `new` is mixed with smart pointers, or a `shared_ptr` cycle exists.
+
+**Q44: What is undefined behavior (UB)?**
+Anything can happen. Examples: signed integer overflow, use-after-free, null pointer dereference, uninitialized variable read, out-of-bounds array access, race conditions.
+
+**Q45: What is `std::byte`?**
+A distinct type for raw memory (C++17). Prevents accidentally treating bytes as integers or characters.
+
+**Q46: What is `[[likely]]` / `[[unlikely]]` (C++20)?**
+Hints to compiler/optimizer about branch probability. May improve performance in hot loops.
+
+**Q47: Difference between `std::lock_guard` and `std::unique_lock`?**
+`lock_guard`: RAII minimal, locks once, no manual control.
+`unique_lock`: RAII but allows lock/unlock/defer/try_lock, can be moved.
+
+**Q48: What is `std::scoped_lock` (C++17)?**
+RAII for locking **multiple** mutexes using a deadlock-avoidance algorithm.
+
+**Q49: Why use `std::make_unique` / `std::make_shared`?**
+Safer (no naked `new`), more efficient (`make_shared` allocates control block with object in one allocation), exception-safe.
+
+**Q50: What is `std::source_location` (C++20)?**
+Captures file name, line, function at compile time for better logging.
+
+---
+
+> **Next:** continue with `06-solid-principles/README.md` for the SOLID principles applied in C++.
