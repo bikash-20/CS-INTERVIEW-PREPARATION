@@ -172,6 +172,18 @@ Everything in one place. Use this as your study roadmap.
 
 ---
 
+## Frontend Interview Prep
+
+[Frontend Interview Guide (HTML, CSS, JavaScript, TypeScript, React, performance, accessibility, security)](06-frontend-interview/README.md)
+
+---
+
+## Backend Interview Prep
+
+[Backend Interview Guide (REST, JWT, SQL/NoSQL, Node.js + Express, Java + Spring Boot, Python + Django/FastAPI)](07-backend-interview/README.md)
+
+---
+
 ## Recommended Study Order
 
 If you only have **8 weeks**:

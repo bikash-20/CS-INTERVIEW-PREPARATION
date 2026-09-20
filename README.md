@@ -53,6 +53,18 @@ Every major DSA topic with theory + multiple problems (Easy / Medium / Hard).
 ### `05-resources/` — External Resources
 - Curated lists of books, YouTube channels, websites
 
+### `06-frontend-interview/` — Frontend Interview Prep
+- HTML, CSS, JavaScript, TypeScript, React (hooks, state, routing, performance)
+- Testing, accessibility, build tools, networking, browser storage, security, web performance
+- Coding challenges and behavioral / system design questions
+
+### `07-backend-interview/` — Backend Interview Prep
+- REST, JWT, SQL/NoSQL, caching, message queues, rate limiting
+- Node.js + Express (event loop, async, middleware, testing)
+- Java + Spring Boot (JPA, AOP, security, microservices)
+- Python + Django / FastAPI (ORM, DRF, Pydantic, async)
+- Backend coding challenges and system design questions
+
 ---
 
 ## How To Use This Repo
