@@ -148,8 +148,8 @@ This is a **public repo**. PRs welcome — fix typos, add problems, improve expl
 - **7** CS fundamentals modules with interview Q&A
 - **15** classic system design problems (URL shortener, Twitter, YouTube, Uber, WhatsApp, Dropbox, KV store, rate limiter, notification system, parking lot, pastebin, web crawler, proximity, Instagram, task scheduler)
 - **25+** design patterns with C++ examples
-- **100+** Frontend interview Q&A (HTML, CSS, JavaScript, TypeScript, React)
-- **100+** Backend interview Q&A (Node.js, Java Spring Boot, Python)
+- **270+** Frontend interview Q&A (HTML, CSS, JavaScript, TypeScript, React, Next.js, a11y, security)
+- **240+** Backend interview Q&A (Node.js, Java Spring Boot, Python Django/FastAPI)
 - **113+** DevOps interview Q&A (Docker, K8s, AWS, CI/CD, Terraform, Ansible)
 
 ---
