@@ -1,12 +1,51 @@
-# C++ Interview Mastery — The Complete Preparation Repository
+# C++ & Full-Stack Interview Mastery — The Complete Preparation Repository
 
-> A **public, comprehensive, and battle-tested** interview preparation repository for Software Engineer roles. Every topic includes **theory, intuition, optimized C++ code, complexity analysis, and common interview follow-ups**.
+> **One repo. Every topic. From your first array to your last system-design round.**
 
-Whether you're targeting **FAANG**, top product companies, service-based companies, or fast-growing startups — this repo is designed to be your **single source of truth**.
+This is a **public, comprehensive, and battle-tested** interview preparation repository covering **everything** a modern Software Engineer is asked: **C++ Data Structures & Algorithms, Core CS fundamentals, System Design, Frontend, Backend, and DevOps**.
+
+Every topic is written in **simple, plain English** with **theory, intuition, optimized code, complexity analysis, and the exact interview questions companies ask** — followed up with **real, runnable code snippets** in the language that belongs to that topic:
+
+- **C++17/20** for DSA
+- **JavaScript / TypeScript / React** for Frontend
+- **Node.js, Java Spring Boot, Python Django/FastAPI** for Backend
+- **Bash, YAML, Dockerfile, HCL, Prometheus** for DevOps
 
 ---
 
-## What's Inside
+## Why This Repo?
+
+- **Built for everyone** — FAANG, top product companies, service-based companies, fast-growing startups.
+- **Built for everyone** — C++ SDEs, Frontend Engineers, Backend Engineers, and DevOps engineers.
+- **Single source of truth** — open it once, prepare for the whole loop.
+- **Battle-tested structure** — theory first, code second, interview Q&A last. Always.
+
+---
+
+## What's Inside (At a Glance)
+
+- **18 DSA topics** with 56+ solved C++ problems (Easy / Medium / Hard)
+- **7 CS fundamentals** modules (OS, DBMS, CN, OOP, C++ specifics, SOLID, design patterns)
+- **10 classic system design** problems (URL shortener, Twitter, YouTube, Uber, WhatsApp, Dropbox, KV store, rate limiter, notification system, parking lot)
+- **Frontend interview guide** (HTML/CSS, JavaScript, TypeScript, React, performance, accessibility, security)
+- **Backend interview guide** (Node.js, Java Spring Boot, Python Django/FastAPI + REST, JWT, SQL/NoSQL, caching)
+- **DevOps interview guide** (Docker, Kubernetes, AWS, CI/CD, Terraform, Ansible, monitoring, security)
+- **4 quick-revision cheatsheets** (complexity, STL, pattern recognition, interview strategies)
+- **Curated resources** — books, websites, YouTube channels, study plans
+
+---
+
+## How To Use This Repo
+
+1. **Topic-wise preparation** → Pick a topic from `01-dsa-topics/`, read `theory/README.md`, then solve the `problems/` in order.
+2. **Stack-specific prep** → Frontend devs jump to `06-`, Backend devs to `07-`, DevOps to `08-`.
+3. **Quick revision** → Use `04-cheatsheets/` before interviews.
+4. **System Design** → Read `03-system-design/01-fundamentals/` first, then practice classic problems.
+5. **Daily practice** → Solve 2-3 problems consistently for 8-12 weeks.
+
+---
+
+## What's Inside (Detailed)
 
 ### `01-dsa-topics/` — Data Structures & Algorithms (C++)
 Every major DSA topic with theory + multiple problems (Easy / Medium / Hard).
@@ -77,15 +116,6 @@ Every major DSA topic with theory + multiple problems (Easy / Medium / Hard).
 
 ---
 
-## How To Use This Repo
-
-1. **Topic-wise preparation** → Pick a topic from `01-dsa-topics/`, read `theory/README.md`, then solve the `problems/` in order.
-2. **Quick revision** → Use `04-cheatsheets/` before interviews.
-3. **System Design** → Read `03-system-design/01-fundamentals/` first, then practice classic problems.
-4. **Daily practice** → Solve 2-3 problems consistently for 8-12 weeks.
-
----
-
 ## How To Compile
 
 Each `.cpp` file is **standalone** and self-contained. To compile and run:
@@ -113,11 +143,14 @@ This is a **public repo**. PRs welcome — fix typos, add problems, improve expl
 
 ## Coverage Targets
 
-- **150+** curated LeetCode-style problems solved
+- **56+** curated LeetCode-style C++ problems solved
 - **18** DSA topics fully covered
 - **7** CS fundamentals modules with interview Q&A
-- **18** classic system design problems
+- **10** classic system design problems
 - **25+** design patterns with C++ examples
+- **100+** Frontend interview Q&A (HTML, CSS, JavaScript, TypeScript, React)
+- **100+** Backend interview Q&A (Node.js, Java Spring Boot, Python)
+- **113+** DevOps interview Q&A (Docker, K8s, AWS, CI/CD, Terraform, Ansible)
 
 ---
 
