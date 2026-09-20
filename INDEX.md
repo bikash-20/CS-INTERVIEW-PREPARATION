@@ -184,6 +184,12 @@ Everything in one place. Use this as your study roadmap.
 
 ---
 
+## DevOps Interview Prep
+
+[DevOps Interview Guide (Linux, Docker, Kubernetes, AWS, CI/CD, Terraform, Ansible, monitoring, security)](08-devops-interview/README.md)
+
+---
+
 ## Recommended Study Order
 
 If you only have **8 weeks**:

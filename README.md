@@ -65,6 +65,16 @@ Every major DSA topic with theory + multiple problems (Easy / Medium / Hard).
 - Python + Django / FastAPI (ORM, DRF, Pydantic, async)
 - Backend coding challenges and system design questions
 
+### `08-devops-interview/` — DevOps Interview Prep
+- Linux & Shell Scripting, Networking, Git
+- Docker (Dockerfile, Compose, multi-stage builds)
+- Kubernetes (Pods, Deployments, Services, Ingress, Probes, HPA, Helm)
+- AWS (EC2, S3, IAM, VPC, RDS, Lambda, CloudWatch, ALB/NLB)
+- CI/CD (Jenkins, GitHub Actions, GitLab CI)
+- Terraform & Ansible (IaC & config management)
+- Monitoring & Logging (Prometheus, Grafana, ELK)
+- Security & DevSecOps, plus coding/scenario questions and a cheat sheet
+
 ---
 
 ## How To Use This Repo
